@@ -48,7 +48,7 @@ Note: Checkout `demo` folder more details.
 
 ```php
 <?php
-use Roolith\Config;
+use Roolith\Configuration\Config;
 
 define('ROOLITH_CONFIG_ROOT', __DIR__. '/config');
 
@@ -59,7 +59,7 @@ print_r(Config::get('database')); // generalDatabase
 
 ```php
 <?php
-use Roolith\Config;
+use Roolith\Configuration\Config;
 
 require_once __DIR__. '/../vendor/autoload.php';
 

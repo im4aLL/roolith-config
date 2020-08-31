@@ -1,7 +1,7 @@
 <?php
-namespace Roolith\Exception;
+namespace Roolith\Configuration\Exception;
 
-use Roolith\Interfaces\Exceptions\ConfigException;
+use Roolith\Configuration\Interfaces\Exceptions\ConfigException;
 
 class Exception extends \Exception implements ConfigException
 {

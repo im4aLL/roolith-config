@@ -1,9 +1,9 @@
 <?php
-namespace Roolith;
+namespace Roolith\Configuration;
 
-use Roolith\Exception\Exception;
-use Roolith\Exception\InvalidArgumentException;
-use Roolith\Interfaces\ConfigInterface;
+use Roolith\Configuration\Exception\Exception;
+use Roolith\Configuration\Exception\InvalidArgumentException;
+use Roolith\Configuration\Interfaces\ConfigInterface;
 
 class Config implements ConfigInterface
 {

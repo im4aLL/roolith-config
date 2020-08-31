@@ -1,8 +1,8 @@
 <?php
-namespace Roolith\Exception;
+namespace Roolith\Configuration\Exception;
 
 
-class InvalidArgumentException extends \Exception implements \Roolith\Interfaces\Exceptions\InvalidArgumentException
+class InvalidArgumentException extends \Exception implements \Roolith\Configuration\Interfaces\Exceptions\InvalidArgumentException
 {
 
 }

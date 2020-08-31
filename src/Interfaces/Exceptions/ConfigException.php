@@ -1,5 +1,5 @@
 <?php
-namespace Roolith\Interfaces\Exceptions;
+namespace Roolith\Configuration\Interfaces\Exceptions;
 
 interface ConfigException
 {

@@ -1,12 +1,12 @@
 <?php
 use PHPUnit\Framework\TestCase;
-use Roolith\Config;
+use Roolith\Configuration\Config;
 
 class ConfigTest extends TestCase
 {
     public function testShouldThrowExceptionIfConfigRootNotDefined()
     {
-        $this->expectException(\Roolith\Exception\Exception::class);
+        $this->expectException(\Roolith\Configuration\Exception\Exception::class);
         Config::getInstance();
     }
 
@@ -25,7 +25,7 @@ class ConfigTest extends TestCase
 
     public function testShouldThrowExceptionForInvalidName()
     {
-        $this->expectException(\Roolith\Exception\InvalidArgumentException::class);
+        $this->expectException(\Roolith\Configuration\Exception\InvalidArgumentException::class);
         Config::get('(name');
     }
 

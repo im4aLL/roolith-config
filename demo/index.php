@@ -1,5 +1,5 @@
 <?php
-use Roolith\Config;
+use Roolith\Configuration\Config;
 
 require_once __DIR__. '/../vendor/autoload.php';
 
