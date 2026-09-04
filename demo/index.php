@@ -4,7 +4,7 @@ use Roolith\Configuration\Config;
 require_once __DIR__. '/../vendor/autoload.php';
 
 define('ROOLITH_CONFIG_ROOT', __DIR__. '/config');
-define('ROOLITH_ENV', 'development');
+// define('ROOLITH_ENV', 'development');
 
 function dd($d) {
     echo '<pre>';
@@ -12,6 +12,6 @@ function dd($d) {
     echo '</pre>';
 }
 
-//Config::setEnv('development');
-dd(Config::get('development.database'));
+// Config::setEnv('development');
+dd(Config::get('staging.database'));
 dd(Config::env());

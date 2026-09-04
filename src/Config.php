@@ -5,8 +5,40 @@ use Roolith\Configuration\Exception\Exception;
 use Roolith\Configuration\Exception\InvalidArgumentException;
 use Roolith\Configuration\Interfaces\ConfigInterface;
 
+/**
+ * Static file-based config loader.
+ *
+ * Environment precedence, highest first:
+ *
+ * 1. Explicit `Config::setEnv()` value (process env `ROOLITH_ENVIRONMENT`).
+ * 2. `ROOLITH_ENV` constant, read once on first init when no process env is set.
+ * 3. `local` default.
+ *
+ * Note: the legacy generic `environment` process env key is NOT read. It was
+ * removed as a breaking change (see README upgrade note) because the generic
+ * name collides with OS-level variables and silently overrode `ROOLITH_ENV`.
+ *
+ * `setEnv()` takes effect immediately for later `get()` calls because all
+ * env files are preloaded at init; no reload is needed for env switches.
+ * `ROOLITH_CONFIG_ROOT` and `ROOLITH_ENV` are read-once PHP constants.
+ * Changing root within the same process requires `Config::reset(false)`
+ * followed by a fresh `getInstance()`/`get()` to reload while preserving env,
+ * or `Config::reset()` to also clear env state (e.g. for tests).
+ */
 class Config implements ConfigInterface
 {
+    /**
+     * Process environment key holding the active environment name.
+     *
+     * Namespaced to avoid colliding with a generic OS `environment` variable.
+     */
+    public const ENV_KEY = 'ROOLITH_ENVIRONMENT';
+
+    /**
+     * Fallback environment when none is configured.
+     */
+    public const DEFAULT_ENV = 'local';
+
     /**
      * @var array<string, mixed>
      */
@@ -21,6 +53,10 @@ class Config implements ConfigInterface
     /**
      * Initializes the singleton and loads all config files.
      *
+     * Seeds process env `ROOLITH_ENVIRONMENT` from `ROOLITH_ENV` or `local`
+     * only when no explicit process env value exists yet. See class docblock
+     * for full precedence.
+     *
      * @return void
      * @throws Exception If ROOLITH_CONFIG_ROOT is undefined or config loading fails.
      */
@@ -30,14 +66,17 @@ class Config implements ConfigInterface
             throw new Exception('Please define `ROOLITH_CONFIG_ROOT` to your project root');
         }
 
-        if (!self::env()) {
-            if (defined('ROOLITH_ENV')) {
-                putenv('environment='.ROOLITH_ENV);
+        $current = getenv(self::ENV_KEY);
+
+        if ($current === false || $current === '') {
+            if (defined('ROOLITH_ENV') && ROOLITH_ENV !== '' && ROOLITH_ENV !== false) {
+                putenv(self::ENV_KEY.'='.ROOLITH_ENV);
             } else {
-                putenv('environment=local');
+                putenv(self::ENV_KEY.'='.self::DEFAULT_ENV);
             }
         }
 
+        self::$configArray = [];
         self::loadDefault();
         self::loadOthers();
     }
@@ -270,21 +309,57 @@ class Config implements ConfigInterface
     /**
      * Returns the current environment name.
      *
+     * Reads the namespaced process env key `ROOLITH_ENVIRONMENT`.
+     *
      * @return string|false The environment name, or false when it is not set.
      */
     public static function env(): string|false
     {
-        return getenv('environment');
+        $namespaced = getenv(self::ENV_KEY);
+
+        if ($namespaced !== false && $namespaced !== '') {
+            return $namespaced;
+        }
+
+        return false;
     }
 
     /**
      * Sets the current environment name.
+     *
+     * Writes the namespaced process env key `ROOLITH_ENVIRONMENT` and takes
+     * effect immediately for later `get()` calls; no reload is needed because
+     * all env files are preloaded. This overrides the `ROOLITH_ENV` constant.
      *
      * @param string $name The environment name to activate.
      * @return void
      */
     public static function setEnv($name): void
     {
-        putenv('environment='.$name);
+        putenv(self::ENV_KEY.'='.$name);
+    }
+
+    /**
+     * Resets singleton state for tests and root changes.
+     *
+     * Clears the shared instance and loaded config data. By default also
+     * clears the namespaced env state so the next `getInstance()` or `get()`
+     * call re-seeds env per documented precedence and reloads from the
+     * current `ROOLITH_CONFIG_ROOT`.
+     *
+     * Pass `$clearEnv = false` to reload from a new `ROOLITH_CONFIG_ROOT`
+     * while preserving the current explicit env.
+     *
+     * @param bool $clearEnv Whether to clear env state as well.
+     * @return void
+     */
+    public static function reset(bool $clearEnv = true): void
+    {
+        self::$instance = null;
+        self::$configArray = [];
+
+        if ($clearEnv) {
+            putenv(self::ENV_KEY);
+        }
     }
 }

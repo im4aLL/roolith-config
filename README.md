@@ -78,3 +78,32 @@ Config::get('a.b'); // c
 
 Config::get('staging.database', true); // true means it will skip auto set environment
 ```
+
+#### Environment precedence
+
+Highest first:
+
+1. `Config::setEnv('production')` (process env `ROOLITH_ENVIRONMENT`, takes effect immediately).
+2. `ROOLITH_ENV` constant, read once on first init.
+3. `local` default.
+
+```php
+Config::reset(); // clear singleton, loaded data, and env state (e.g. for tests)
+Config::reset(false); // reload from a new ROOLITH_CONFIG_ROOT while preserving env
+```
+
+Note: `Config::reset()` is a test and reload utility on the concrete class only.
+Note: it is not part of the `ConfigInterface` consumer contract.
+
+#### Upgrade note (breaking change)
+
+The generic `environment` process env var is no longer read. If you set env
+via `putenv('environment=...')`, switch to one of these:
+
+```php
+Config::setEnv('production');
+// or
+define('ROOLITH_ENV', 'production');
+// or
+putenv('ROOLITH_ENVIRONMENT=production');
+```

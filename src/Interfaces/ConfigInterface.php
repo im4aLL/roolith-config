@@ -27,12 +27,18 @@ interface ConfigInterface
     /**
      * Returns the current environment name.
      *
+     * Reads the namespaced process env key `ROOLITH_ENVIRONMENT`.
+     *
      * @return string|false The environment name, or false when it is not set.
      */
     public static function env(): string|false;
 
     /**
      * Sets the current environment name.
+     *
+     * Writes the namespaced process env key `ROOLITH_ENVIRONMENT` and takes
+     * effect immediately for later `get()` calls. This overrides the
+     * `ROOLITH_ENV` constant.
      *
      * @param string $name The environment name to activate.
      * @return void
