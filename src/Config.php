@@ -42,34 +42,68 @@ class Config implements ConfigInterface
     }
 
     /**
-     * Load default config file
+     * Resolve and validate config root.
+     *
+     * @return string
+     * @throws Exception
      */
-    protected static function loadDefault()
+    private static function resolvedRoot(): string
     {
-        $defaultConfig = ROOLITH_CONFIG_ROOT.'/config.php';
+        $root = ROOLITH_CONFIG_ROOT;
+        $realRoot = realpath($root);
+
+        if ($realRoot === false || !is_dir($realRoot)) {
+            throw new Exception('Invalid `ROOLITH_CONFIG_ROOT`: directory not found: '.$root);
+        }
+
+        return $realRoot;
+    }
+
+    /**
+     * Load default config file
+     *
+     * @return void
+     * @throws Exception
+     */
+    protected static function loadDefault(): void
+    {
+        $defaultConfig = self::resolvedRoot().'/config.php';
 
         if (file_exists($defaultConfig)) {
-            self::$configArray['default'] = include $defaultConfig;
+            $data = include $defaultConfig;
+
+            if (!is_array($data)) {
+                throw new Exception('Invalid config data in `config.php`: expected array, got '.gettype($data));
+            }
+
+            self::$configArray['default'] = $data;
         }
     }
 
     /**
      * Load other config files
      *
-     * @return bool
+     * @return void
+     * @throws Exception
      */
-    protected static function loadOthers()
+    protected static function loadOthers(): void
     {
-        $fileArray = glob(ROOLITH_CONFIG_ROOT.'/*.config.php');
+        $fileArray = glob(self::resolvedRoot().'/*.config.php');
 
         if (count($fileArray) === 0) {
-            return false;
+            return;
         }
 
         foreach ($fileArray as $file) {
             $key = str_replace('.config.php', '', basename($file));
 
-            self::$configArray[$key] = include $file;
+            $data = include $file;
+
+            if (!is_array($data)) {
+                throw new Exception('Invalid config data in `'.basename($file).'`: expected array, got '.gettype($data));
+            }
+
+            self::$configArray[$key] = $data;
         }
     }
 
@@ -77,7 +111,7 @@ class Config implements ConfigInterface
     /**
      * @inheritDoc
      */
-    public static function getInstance()
+    public static function getInstance(): self
     {
         if (self::$instance === null) {
             self::$instance = new Config();
@@ -89,11 +123,10 @@ class Config implements ConfigInterface
     /**
      * @inheritDoc
      */
-    public static function get($name, $skipEnvReplacement = false)
+    public static function get($name, $skipEnvReplacement = false): mixed
     {
         if (!$name || is_null($name) || !is_string($name) || strpbrk($name, '{}()/\@:')) {
             throw new InvalidArgumentException('Invalid key: '.var_export($name, true));
-            return false;
         }
 
         self::getInstance();
@@ -121,7 +154,7 @@ class Config implements ConfigInterface
      * @param $name
      * @return mixed|null
      */
-    protected static function getCustomValue($name)
+    protected static function getCustomValue($name): mixed
     {
         $result = null;
         $array = explode('.', $name);
@@ -144,7 +177,7 @@ class Config implements ConfigInterface
      * @param $array
      * @return mixed
      */
-    protected static function getValueByArrayPath($config, $array)
+    protected static function getValueByArrayPath($config, $array): mixed
     {
         $result = $config;
 
@@ -158,7 +191,7 @@ class Config implements ConfigInterface
     /**
      * @inheritDoc
      */
-    public static function env()
+    public static function env(): string|false
     {
         return getenv('environment');
     }
@@ -166,7 +199,7 @@ class Config implements ConfigInterface
     /**
      * @inheritDoc
      */
-    public static function setEnv($name)
+    public static function setEnv($name): void
     {
         putenv('environment='.$name);
     }

@@ -11,7 +11,7 @@ interface ConfigInterface
      *
      * @return $this
      */
-    public static function getInstance();
+    public static function getInstance(): self;
 
     /**
      * Get config value by name
@@ -20,20 +20,20 @@ interface ConfigInterface
      * @param bool $skipEnvReplacement
      * @return mixed
      */
-    public static function get($name, $skipEnvReplacement = false);
+    public static function get($name, $skipEnvReplacement = false): mixed;
 
     /**
      * Get environment name
      *
-     * @return string
+     * @return string|false
      */
-    public static function env();
+    public static function env(): string|false;
 
     /**
      * Set env
      *
      * @param $name
-     * @return $this
+     * @return void
      */
-    public static function setEnv($name);
+    public static function setEnv($name): void;
 }
