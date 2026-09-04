@@ -88,7 +88,7 @@ class Config implements ConfigInterface
      */
     protected static function loadOthers(): void
     {
-        $fileArray = glob(self::resolvedRoot().'/*.config.php');
+        $fileArray = glob(self::resolvedRoot().'/*.config.php') ?: [];
 
         if (count($fileArray) === 0) {
             return;
