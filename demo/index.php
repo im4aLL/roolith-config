@@ -13,5 +13,8 @@ function dd($d) {
 }
 
 // Config::setEnv('development');
-dd(Config::get('staging.database'));
+// Active env lookup: no env prefix in key.
+dd(Config::get('database'));
+// Explicit cross-env lookup: skip auto env prefixing.
+dd(Config::get('staging.database', true));
 dd(Config::env());
