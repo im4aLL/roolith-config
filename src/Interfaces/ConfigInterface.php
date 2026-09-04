@@ -30,6 +30,7 @@ interface ConfigInterface
      * Reads the namespaced process env key `ROOLITH_ENVIRONMENT`.
      *
      * @return string|false The environment name, or false when it is not set.
+     * @throws InvalidArgumentException If the stored env name contains invalid characters.
      */
     public static function env(): string|false;
 

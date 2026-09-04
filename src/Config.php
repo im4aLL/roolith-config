@@ -21,9 +21,23 @@ use Roolith\Configuration\Interfaces\ConfigInterface;
  * `setEnv()` takes effect immediately for later `get()` calls because all
  * env files are preloaded at init; no reload is needed for env switches.
  * `ROOLITH_CONFIG_ROOT` and `ROOLITH_ENV` are read-once PHP constants.
- * Changing root within the same process requires `Config::reset(false)`
- * followed by a fresh `getInstance()`/`get()` to reload while preserving env,
- * or `Config::reset()` to also clear env state (e.g. for tests).
+ * A different root requires a fresh process because constants cannot be
+ * redefined; `Config::reset(false)` only forces a re-init from the current
+ * root while preserving env, or `Config::reset()` to also clear env state
+ * (e.g. for tests).
+ *
+ * Merge semantics (per-key shadowing, no deep merge):
+ *
+ * - Each `get()` resolves one full dot-notation path only.
+ * - With an active env, `get('key')` returns the env file value when the
+ *   full path exists there, otherwise it falls back to `config.php`.
+ *   The env file is checked before `config.php`, so a top-level key in
+ *   `config.php` matching the env name never shadows the env file.
+ * - Missing keys return silent `null`; stored `null` values are preserved.
+ * - Fetching a parent array that exists in the env file returns the env
+ *   array as-is; child keys from `config.php` are NOT deep-merged into it.
+ * - Cross-env reads are literal: `get('staging.database', true)` skips the
+ *   active-env prefix and resolves `staging.database` directly.
  */
 class Config implements ConfigInterface
 {
@@ -59,6 +73,7 @@ class Config implements ConfigInterface
      *
      * @return void
      * @throws Exception If ROOLITH_CONFIG_ROOT is undefined or config loading fails.
+     * @throws InvalidArgumentException If the preset `ROOLITH_ENVIRONMENT` or `ROOLITH_ENV` value is invalid.
      */
     private function __construct()
     {
@@ -78,6 +93,8 @@ class Config implements ConfigInterface
             } else {
                 putenv(self::ENV_KEY.'='.self::DEFAULT_ENV);
             }
+        } else {
+            self::assertValidEnv($current);
         }
 
         self::$configArray = [];
@@ -126,13 +143,17 @@ class Config implements ConfigInterface
      * Loads the default config.php file.
      *
      * @return void
-     * @throws Exception If config.php does not return an array.
+     * @throws Exception If config.php does not return an array or is not readable.
      */
     protected static function loadDefault(): void
     {
         $defaultConfig = self::resolvedRoot().'/config.php';
 
         if (file_exists($defaultConfig)) {
+            if (!is_readable($defaultConfig)) {
+                throw new Exception('Invalid config data in `config.php`: file not readable');
+            }
+
             $data = include $defaultConfig;
 
             if (!is_array($data)) {
@@ -146,8 +167,11 @@ class Config implements ConfigInterface
     /**
      * Loads all environment-specific *.config.php files.
      *
+     * `local` uses only `config.php`, so `local.config.php` is ignored like
+     * the reserved `default.config.php`.
+     *
      * @return void
-     * @throws Exception If any environment config file does not return an array.
+     * @throws Exception If any environment config file does not return an array or is not readable.
      */
     protected static function loadOthers(): void
     {
@@ -162,8 +186,13 @@ class Config implements ConfigInterface
 
             // `default.config.php` would collide with the reserved `default`
             // key holding `config.php`. Skip it to preserve loadDefault data.
-            if ($key === 'default') {
+            // `local.config.php` is also skipped: `local` uses only `config.php`.
+            if ($key === 'default' || $key === 'local') {
                 continue;
+            }
+
+            if (!is_readable($file)) {
+                throw new Exception('Invalid config data in `'.basename($file).'`: file not readable');
             }
 
             $data = include $file;
@@ -196,13 +225,19 @@ class Config implements ConfigInterface
      * Retrieves a configuration value by dot-notation key.
      *
      * Dotted keys with an active env first try `env.key`, then fall back to
-     * a literal lookup of the full dotted path. Pass `$skipEnvReplacement`
+     * a literal lookup of the full dotted path. Bare keys fall back to the
+     * `default` (`config.php`) value when the env file lacks the key.
+     * A bare key naming a loaded env file (e.g. `staging`) returns that
+     * env file array; env files are only otherwise reachable via dotted keys.
+     * No deep merge is performed: an env array shadows the default array
+     * at the requested path. Pass `$skipEnvReplacement`
      * as true to skip the env-prefixed attempt and resolve literally.
      *
      * @param mixed $name Dot-notation config key to look up.
      * @param bool $skipEnvReplacement Whether to skip automatic environment prefixing.
      * @return mixed The configured value, or null when the key is not found.
-     * @throws InvalidArgumentException If the key is empty or contains invalid characters.
+     * @throws InvalidArgumentException If the key is empty or contains invalid characters, or the active env is invalid.
+     * @throws Exception If initialization fails due to missing root or invalid config data.
      */
     public static function get($name, $skipEnvReplacement = false): mixed
     {
@@ -210,7 +245,6 @@ class Config implements ConfigInterface
 
         self::getInstance();
 
-        $actualName = $name;
         $environment = null;
 
         if (!$skipEnvReplacement) {
@@ -218,17 +252,22 @@ class Config implements ConfigInterface
 
             if ($env !== false && $env !== '' && $env !== 'local') {
                 $environment = $env;
-                $actualName = $environment.'.'.$name;
             }
         }
 
         if ($environment !== null) {
-            if (self::hasCustomValue($actualName)) {
-                return self::getCustomValue($actualName);
+            $segments = explode('.', $name);
+
+            if (array_key_exists($environment, self::$configArray) && self::hasValueByArrayPath(self::$configArray[$environment], $segments)) {
+                return self::getValueByArrayPath(self::$configArray[$environment], $segments);
             }
 
             if (strstr($name, '.')) {
                 return self::getCustomValue($name);
+            }
+
+            if (array_key_exists($name, self::$configArray) && $name !== 'default') {
+                return self::$configArray[$name];
             }
 
             $default = self::$configArray['default'] ?? [];
@@ -236,17 +275,24 @@ class Config implements ConfigInterface
             return array_key_exists($name, $default) ? $default[$name] : null;
         }
 
-        if (strstr($actualName, '.')) {
-            return self::getCustomValue($actualName);
+        if (strstr($name, '.')) {
+            return self::getCustomValue($name);
+        }
+
+        if (array_key_exists($name, self::$configArray) && $name !== 'default') {
+            return self::$configArray[$name];
         }
 
         $default = self::$configArray['default'] ?? [];
 
-        return array_key_exists($actualName, $default) ? $default[$actualName] : null;
+        return array_key_exists($name, $default) ? $default[$name] : null;
     }
 
     /**
      * Resolves a dot-notation key against loaded config data.
+     *
+     * When the first segment names a loaded env file, that file is checked
+     * before `config.php` so a default top-level key can never shadow it.
      *
      * @param string $name Dot-notation key to resolve.
      * @return mixed|null The matched value, or null when not found.
@@ -254,11 +300,6 @@ class Config implements ConfigInterface
     protected static function getCustomValue($name): mixed
     {
         $array = explode('.', $name);
-        $default = self::$configArray['default'] ?? [];
-
-        if (self::hasValueByArrayPath($default, $array)) {
-            return self::getValueByArrayPath($default, $array);
-        }
 
         if (array_key_exists($array[0], self::$configArray)) {
             $rest = array_slice($array, 1);
@@ -268,29 +309,13 @@ class Config implements ConfigInterface
             }
         }
 
-        return null;
-    }
-
-    /**
-     * Checks whether a dot-notation key exists in loaded config data.
-     *
-     * @param string $name Dot-notation key to check.
-     * @return bool True when the key path exists, false otherwise.
-     */
-    private static function hasCustomValue($name): bool
-    {
-        $array = explode('.', $name);
         $default = self::$configArray['default'] ?? [];
 
         if (self::hasValueByArrayPath($default, $array)) {
-            return true;
+            return self::getValueByArrayPath($default, $array);
         }
 
-        if (array_key_exists($array[0], self::$configArray)) {
-            return self::hasValueByArrayPath(self::$configArray[$array[0]], array_slice($array, 1));
-        }
-
-        return false;
+        return null;
     }
 
     /**
@@ -343,12 +368,15 @@ class Config implements ConfigInterface
      * Reads the namespaced process env key `ROOLITH_ENVIRONMENT`.
      *
      * @return string|false The environment name, or false when it is not set.
+     * @throws InvalidArgumentException If the stored env name is not empty but contains invalid characters.
      */
     public static function env(): string|false
     {
         $namespaced = getenv(self::ENV_KEY);
 
         if ($namespaced !== false && $namespaced !== '') {
+            self::assertValidEnv($namespaced);
+
             return $namespaced;
         }
 
@@ -415,15 +443,16 @@ class Config implements ConfigInterface
     }
 
     /**
-     * Resets singleton state for tests and root changes.
+     * Resets singleton state for tests and forced re-init.
      *
      * Clears the shared instance and loaded config data. By default also
      * clears the namespaced env state so the next `getInstance()` or `get()`
      * call re-seeds env per documented precedence and reloads from the
      * current `ROOLITH_CONFIG_ROOT`.
      *
-     * Pass `$clearEnv = false` to reload from a new `ROOLITH_CONFIG_ROOT`
-     * while preserving the current explicit env.
+     * Pass `$clearEnv = false` to force a re-init from the current root
+     * while preserving the current explicit env. A different root requires
+     * a fresh process because `ROOLITH_CONFIG_ROOT` is a PHP constant.
      *
      * @param bool $clearEnv Whether to clear env state as well.
      * @return void
