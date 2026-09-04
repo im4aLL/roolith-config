@@ -6,15 +6,23 @@ PHP config class
 composer require roolith/config
 ```
 
+Note: the library supports PHP `^8.0` (runtime and dev toolchain).
+Dev toolchain uses PHPUnit `^9.6`, which also runs on PHP 8.0.
+The committed lock is resolved against a PHP 8.0 platform, so
+`composer install` works on PHP 8.0 and up.
+
 #### Doc
 Project directory requires a folder (e.g `config`) where configuration varibles will be stored.
 
-Default config filename `config.php` and environment specific file names are - 
+Default config filename `config.php` and environment specific file names are -
 
 ```text
 development.config.php
 production.config.php
 ```
+
+Note: `default.config.php` is reserved and ignored, since `config.php` is
+already loaded under the `default` key.
 
 ##### config.php
 ```php
@@ -78,6 +86,12 @@ Config::get('a.b'); // c
 
 Config::get('staging.database', true); // true means it will skip auto set environment
 ```
+
+Note: with an active env, dotted keys first try `env.key`, then fall back
+to a literal lookup of the full dotted path.
+So `Config::get('staging.database')` under `production` still resolves the
+literal `staging.database` when `production.staging.database` is missing.
+Pass `true` as second arg to skip the env-prefixed attempt entirely.
 
 #### Environment precedence
 

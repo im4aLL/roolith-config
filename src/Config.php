@@ -66,10 +66,14 @@ class Config implements ConfigInterface
             throw new Exception('Please define `ROOLITH_CONFIG_ROOT` to your project root');
         }
 
+        // Fail fast on missing or unreadable root before seeding env state.
+        self::resolvedRoot();
+
         $current = getenv(self::ENV_KEY);
 
         if ($current === false || $current === '') {
             if (defined('ROOLITH_ENV') && ROOLITH_ENV !== '' && ROOLITH_ENV !== false) {
+                self::assertValidEnv(ROOLITH_ENV);
                 putenv(self::ENV_KEY.'='.ROOLITH_ENV);
             } else {
                 putenv(self::ENV_KEY.'='.self::DEFAULT_ENV);
@@ -84,16 +88,35 @@ class Config implements ConfigInterface
     /**
      * Resolves and validates the config root directory.
      *
+     * Normalizes trailing separators and resolves symlinks, `.`, and `..`
+     * via `realpath`. A missing `config.php` remains optional; only the
+     * directory itself must exist and be readable.
+     *
      * @return string The validated absolute config root path.
-     * @throws Exception If the directory cannot be resolved or does not exist.
+     * @throws Exception If the root is not a non-empty string, or the directory cannot be resolved or read.
      */
     private static function resolvedRoot(): string
     {
         $root = ROOLITH_CONFIG_ROOT;
-        $realRoot = realpath($root);
+
+        if (!is_string($root) || trim($root) === '') {
+            throw new Exception('Invalid `ROOLITH_CONFIG_ROOT`: expected non-empty string, got '.gettype($root));
+        }
+
+        $normalized = rtrim($root, "/\\");
+
+        if ($normalized === '') {
+            throw new Exception('Invalid `ROOLITH_CONFIG_ROOT`: directory not found: '.$root);
+        }
+
+        $realRoot = realpath($normalized);
 
         if ($realRoot === false || !is_dir($realRoot)) {
             throw new Exception('Invalid `ROOLITH_CONFIG_ROOT`: directory not found: '.$root);
+        }
+
+        if (!is_readable($realRoot)) {
+            throw new Exception('Invalid `ROOLITH_CONFIG_ROOT`: directory not readable: '.$root);
         }
 
         return $realRoot;
@@ -137,6 +160,12 @@ class Config implements ConfigInterface
         foreach ($fileArray as $file) {
             $key = str_replace('.config.php', '', basename($file));
 
+            // `default.config.php` would collide with the reserved `default`
+            // key holding `config.php`. Skip it to preserve loadDefault data.
+            if ($key === 'default') {
+                continue;
+            }
+
             $data = include $file;
 
             if (!is_array($data)) {
@@ -166,6 +195,10 @@ class Config implements ConfigInterface
     /**
      * Retrieves a configuration value by dot-notation key.
      *
+     * Dotted keys with an active env first try `env.key`, then fall back to
+     * a literal lookup of the full dotted path. Pass `$skipEnvReplacement`
+     * as true to skip the env-prefixed attempt and resolve literally.
+     *
      * @param mixed $name Dot-notation config key to look up.
      * @param bool $skipEnvReplacement Whether to skip automatic environment prefixing.
      * @return mixed The configured value, or null when the key is not found.
@@ -173,9 +206,7 @@ class Config implements ConfigInterface
      */
     public static function get($name, $skipEnvReplacement = false): mixed
     {
-        if (!$name || is_null($name) || !is_string($name) || strpbrk($name, '{}()/\@:')) {
-            throw new InvalidArgumentException('Invalid key: '.var_export($name, true));
-        }
+        self::assertValidKey($name);
 
         self::getInstance();
 
@@ -333,10 +364,54 @@ class Config implements ConfigInterface
      *
      * @param string $name The environment name to activate.
      * @return void
+     * @throws InvalidArgumentException If the env name is empty or contains invalid characters.
      */
     public static function setEnv($name): void
     {
+        self::assertValidEnv($name);
+
         putenv(self::ENV_KEY.'='.$name);
+    }
+
+    /**
+     * Validates a dot-notation config key.
+     *
+     * Allows `A-Za-z0-9_.-` with no empty segments, so `"0"` and
+     * `"missing-key-xyz"` are valid while `""`, `".."`, `"a b"`,
+     * `".a"`, `"a."`, and `"a..b"` are rejected.
+     *
+     * @param mixed $name Key to validate.
+     * @return void
+     * @throws InvalidArgumentException If the key is invalid.
+     */
+    private static function assertValidKey($name): void
+    {
+        if (!is_string($name) || $name === '' || !preg_match('/\A[A-Za-z0-9_.-]+\z/', $name)) {
+            throw new InvalidArgumentException('Invalid key: '.var_export($name, true));
+        }
+
+        foreach (explode('.', $name) as $segment) {
+            if ($segment === '') {
+                throw new InvalidArgumentException('Invalid key: '.var_export($name, true));
+            }
+        }
+    }
+
+    /**
+     * Validates an environment name.
+     *
+     * Env names must be non-empty strings without dots, so they stay
+     * unambiguous as prefixes in dot-notation lookups.
+     *
+     * @param mixed $name Env name to validate.
+     * @return void
+     * @throws InvalidArgumentException If the env name is invalid.
+     */
+    private static function assertValidEnv($name): void
+    {
+        if (!is_string($name) || $name === '' || !preg_match('/\A[A-Za-z0-9_-]+\z/', $name)) {
+            throw new InvalidArgumentException('Invalid env: '.var_export($name, true));
+        }
     }
 
     /**

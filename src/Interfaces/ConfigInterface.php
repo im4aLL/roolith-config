@@ -42,6 +42,7 @@ interface ConfigInterface
      *
      * @param string $name The environment name to activate.
      * @return void
+     * @throws InvalidArgumentException If the env name is empty or contains invalid characters.
      */
     public static function setEnv($name): void;
 }
