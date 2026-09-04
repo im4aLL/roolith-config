@@ -2,7 +2,7 @@
 use PHPUnit\Framework\TestCase;
 use Roolith\Configuration\Config;
 
-class ConfigTest extends TestCase
+class ConfigCoreTest extends TestCase
 {
     public function testShouldThrowExceptionIfConfigRootNotDefined()
     {

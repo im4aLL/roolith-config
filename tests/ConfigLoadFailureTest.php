@@ -2,7 +2,7 @@
 use PHPUnit\Framework\TestCase;
 use Roolith\Configuration\Config;
 
-class ConfigHardeningTest extends TestCase
+class ConfigLoadFailureTest extends TestCase
 {
     /**
      * @runInSeparateProcess

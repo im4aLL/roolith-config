@@ -8,20 +8,21 @@ use Roolith\Configuration\Interfaces\ConfigInterface;
 class Config implements ConfigInterface
 {
     /**
-     * @var array
+     * @var array<string, mixed>
      */
     private static $configArray = [];
 
     /**
-     * @var null
+     * @var self|null
      */
     private static $instance = null;
 
 
     /**
-     * Config constructor.
+     * Initializes the singleton and loads all config files.
      *
-     * @throws Exception
+     * @return void
+     * @throws Exception If ROOLITH_CONFIG_ROOT is undefined or config loading fails.
      */
     private function __construct()
     {
@@ -42,10 +43,10 @@ class Config implements ConfigInterface
     }
 
     /**
-     * Resolve and validate config root.
+     * Resolves and validates the config root directory.
      *
-     * @return string
-     * @throws Exception
+     * @return string The validated absolute config root path.
+     * @throws Exception If the directory cannot be resolved or does not exist.
      */
     private static function resolvedRoot(): string
     {
@@ -60,10 +61,10 @@ class Config implements ConfigInterface
     }
 
     /**
-     * Load default config file
+     * Loads the default config.php file.
      *
      * @return void
-     * @throws Exception
+     * @throws Exception If config.php does not return an array.
      */
     protected static function loadDefault(): void
     {
@@ -81,10 +82,10 @@ class Config implements ConfigInterface
     }
 
     /**
-     * Load other config files
+     * Loads all environment-specific *.config.php files.
      *
      * @return void
-     * @throws Exception
+     * @throws Exception If any environment config file does not return an array.
      */
     protected static function loadOthers(): void
     {
@@ -109,7 +110,10 @@ class Config implements ConfigInterface
 
 
     /**
-     * @inheritDoc
+     * Returns the shared config singleton instance.
+     *
+     * @return self The shared Config instance.
+     * @throws Exception If initialization fails due to missing root or invalid data.
      */
     public static function getInstance(): self
     {
@@ -121,7 +125,12 @@ class Config implements ConfigInterface
     }
 
     /**
-     * @inheritDoc
+     * Retrieves a configuration value by dot-notation key.
+     *
+     * @param mixed $name Dot-notation config key to look up.
+     * @param bool $skipEnvReplacement Whether to skip automatic environment prefixing.
+     * @return mixed The configured value, or null when the key is not found.
+     * @throws InvalidArgumentException If the key is empty or contains invalid characters.
      */
     public static function get($name, $skipEnvReplacement = false): mixed
     {
@@ -132,64 +141,136 @@ class Config implements ConfigInterface
         self::getInstance();
 
         $actualName = $name;
+        $environment = null;
 
         if (!$skipEnvReplacement) {
-            $environment = self::env();
+            $env = self::env();
 
-            if ($environment !== 'local') {
+            if ($env !== false && $env !== '' && $env !== 'local') {
+                $environment = $env;
                 $actualName = $environment.'.'.$name;
             }
+        }
+
+        if ($environment !== null) {
+            if (self::hasCustomValue($actualName)) {
+                return self::getCustomValue($actualName);
+            }
+
+            if (strstr($name, '.')) {
+                return self::getCustomValue($name);
+            }
+
+            $default = self::$configArray['default'] ?? [];
+
+            return array_key_exists($name, $default) ? $default[$name] : null;
         }
 
         if (strstr($actualName, '.')) {
             return self::getCustomValue($actualName);
         }
 
-        return isset(self::$configArray['default'][$actualName]) ? self::$configArray['default'][$actualName] : null;
+        $default = self::$configArray['default'] ?? [];
+
+        return array_key_exists($actualName, $default) ? $default[$actualName] : null;
     }
 
     /**
-     * Get dot value from array
+     * Resolves a dot-notation key against loaded config data.
      *
-     * @param $name
-     * @return mixed|null
+     * @param string $name Dot-notation key to resolve.
+     * @return mixed|null The matched value, or null when not found.
      */
     protected static function getCustomValue($name): mixed
     {
-        $result = null;
         $array = explode('.', $name);
+        $default = self::$configArray['default'] ?? [];
 
-        if (isset(self::$configArray['default'][$array[0]])) {
-            $result = self::getValueByArrayPath(self::$configArray['default'], $array);
+        if (self::hasValueByArrayPath($default, $array)) {
+            return self::getValueByArrayPath($default, $array);
         }
 
-        if (is_null($result) && isset(self::$configArray[$array[0]])) {
-            $result = self::getValueByArrayPath(self::$configArray[$array[0]], array_slice($array, 1));
+        if (array_key_exists($array[0], self::$configArray)) {
+            $rest = array_slice($array, 1);
+
+            if (self::hasValueByArrayPath(self::$configArray[$array[0]], $rest)) {
+                return self::getValueByArrayPath(self::$configArray[$array[0]], $rest);
+            }
         }
 
-        return $result;
+        return null;
     }
 
     /**
-     * Find array value from key array
+     * Checks whether a dot-notation key exists in loaded config data.
      *
-     * @param $config
-     * @param $array
-     * @return mixed
+     * @param string $name Dot-notation key to check.
+     * @return bool True when the key path exists, false otherwise.
+     */
+    private static function hasCustomValue($name): bool
+    {
+        $array = explode('.', $name);
+        $default = self::$configArray['default'] ?? [];
+
+        if (self::hasValueByArrayPath($default, $array)) {
+            return true;
+        }
+
+        if (array_key_exists($array[0], self::$configArray)) {
+            return self::hasValueByArrayPath(self::$configArray[$array[0]], array_slice($array, 1));
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks whether a nested array path exists.
+     *
+     * @param array<string, mixed> $config The config array to search.
+     * @param array<int, string> $array Ordered list of key segments.
+     * @return bool True when the full path exists, false otherwise.
+     */
+    private static function hasValueByArrayPath($config, $array): bool
+    {
+        $result = $config;
+
+        foreach ($array as $key) {
+            if (!is_array($result) || !array_key_exists($key, $result)) {
+                return false;
+            }
+
+            $result = $result[$key];
+        }
+
+        return true;
+    }
+
+    /**
+     * Retrieves a nested value by key path segments.
+     *
+     * @param array<string, mixed> $config The config array to search.
+     * @param array<int, string> $array Ordered list of key segments.
+     * @return mixed The nested value, or null when the path does not exist.
      */
     protected static function getValueByArrayPath($config, $array): mixed
     {
         $result = $config;
 
         foreach ($array as $key) {
-            $result = &$result[$key];
+            if (!is_array($result) || !array_key_exists($key, $result)) {
+                return null;
+            }
+
+            $result = $result[$key];
         }
 
         return $result;
     }
 
     /**
-     * @inheritDoc
+     * Returns the current environment name.
+     *
+     * @return string|false The environment name, or false when it is not set.
      */
     public static function env(): string|false
     {
@@ -197,7 +278,10 @@ class Config implements ConfigInterface
     }
 
     /**
-     * @inheritDoc
+     * Sets the current environment name.
+     *
+     * @param string $name The environment name to activate.
+     * @return void
      */
     public static function setEnv($name): void
     {
